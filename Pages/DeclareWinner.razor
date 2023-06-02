@@ -1,0 +1,36 @@
+﻿@using Craftfest.Models
+@using Craftfest.Services
+@inject TournamentService tournamentService
+<MudForm>
+    <MudSelect Label="Winner" T="Team" @bind-Value="Winner" SelectedValuesChanged="SelectedWinnnerChanged">
+        @foreach(var team in Game.Teams)
+        {
+            <MudSelectItem Value="@team"></MudSelectItem>
+        }
+    </MudSelect>
+</MudForm>
+
+@code {
+    [Parameter]
+    public int? Id{ get; set; }
+    [Parameter]
+    public Team? Winner{ get; set; }
+
+    [Parameter]
+    public EventCallback<Team> WinnerChanged { get; set; }
+
+    private Game Game;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id != null)
+        {
+            Game = tournamentService.GetGame(Id.Value, 1);
+        }
+    }
+
+    private async Task SelectedWinnnerChanged()
+    {
+        await WinnerChanged.InvokeAsync(Winner);
+    }
+}

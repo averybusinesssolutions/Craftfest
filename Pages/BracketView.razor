@@ -1,0 +1,122 @@
+﻿@page "/bracket"
+@using Craftfest.Data
+@using Craftfest.Interfaces
+@using Craftfest.Models;
+@using Microsoft.EntityFrameworkCore
+@inject IBracketRepo bracketRepo
+
+<h3>Bracket</h3>
+<MudGrid>
+    <MudItem xs="4">
+        <MudPaper>
+            <MudText Typo="Typo.h4">Current Round</MudText>
+            <MudTable Dense="true"  Items="Games">
+                <HeaderContent>
+                    <MudTh>Game Type</MudTh>
+                    <MudTh>Team A</MudTh>
+                    <MudTh>Team B</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+                    <MudTd DataLabel="Game">@context.Type.Name</MudTd>
+                    <MudTd DataLabel="TeamA">@context.Teams[0].Name</MudTd>
+                    <MudTd DataLabel="TeamB">@context.Teams[1].Name</MudTd>
+                    <MudButton>Declare Winner</MudButton>
+                </RowTemplate>
+            </MudTable>
+            <MudButton Color="Color.Primary" OnClick="NextRoundClick">Next Round</MudButton>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="4"></MudItem>
+    <MudItem xs="4">
+
+    </MudItem>
+</MudGrid>
+<MudSpacer></MudSpacer>
+<MudGrid>
+    @{
+        int i = 0;
+    }
+    @foreach(var listOfGames in Rounds)
+    {
+        <MudItem xs="4">
+        <MudPaper>
+            <MudText Typo="Typo.h4">Round @(++i)</MudText>
+            <MudTable Dense="true"  Items="@listOfGames">
+                <HeaderContent>
+                    <MudTh>Game Type</MudTh>
+                    <MudTh>Team A</MudTh>
+                    <MudTh>Team B</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                    
+                <RowTemplate>
+                    <MudTd DataLabel="Game">@context.Type.Name</MudTd>
+                    <MudTd DataLabel="TeamA">@context.Teams[0].Name</MudTd>
+                    <MudTd DataLabel="TeamB">@context.Teams[1].Name</MudTd>
+                    <MudButton>Declare Winner</MudButton>
+                </RowTemplate>
+            </MudTable>
+            <MudButton Color="Color.Primary" OnClick="NextRoundClick">Next Round</MudButton>
+        </MudPaper>
+    </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private Bracket bracket;
+
+    int beerPongGame = 0;
+    int cornHoleGame = 0;
+    int kanjamGame = 0;
+    int potatoSackRace = 0;
+
+    private List<List<Game>> Rounds = new List<List<Game>>();
+
+    private List<Game> Games = new List<Game>();
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        bracket = new Bracket(bracketRepo);
+        bracket.Initialize();
+        Games = NextRound();
+        Rounds.Add(Games);
+        while(bracket.Games.Count > 0)
+        {
+            Rounds.Add(NextRound());
+        }
+    }
+
+    private List<Game> NextRound()
+    {
+        List<Game> output = new List<Game>();
+        List<Team> currentlyPlaying = new List<Team>();
+        foreach (var gt in bracket.GameTypes)
+        {
+            int availableGames = gt.AvailableGames;
+
+            for (int i = 0; i < availableGames; i++)
+            {
+                var game = bracket.Games
+                    .Where(x => x.Type.Name == gt.Name && !currentlyPlaying.Any(cp => cp.Name == x.Teams[0].Name) && !currentlyPlaying.Any(cp => cp.Name == x.Teams[1].Name))
+                    .FirstOrDefault();
+                if (game != null)
+                {
+                    currentlyPlaying.AddRange(game.Teams);
+                    output.Add(game);
+                    bracket.Games.Remove(game);
+                }
+            }
+        }
+
+        return output;
+    }
+
+    private void NextRoundClick()
+    {
+        Games = NextRound();
+        StateHasChanged();
+    }
+}

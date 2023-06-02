@@ -1,0 +1,53 @@
+﻿@page "/tournament/start/{id:int}"
+@using Craftfest.Models;
+@using Craftfest.Services;
+@using Microsoft.AspNetCore.SignalR.Client
+@inject IBracketRepo repo
+@inject TournamentService tournamentService
+@inject NavigationManager NavigationManager
+
+<h3>Tournament Dashboard</h3>
+
+<MudGrid>
+    <MudItem xs="6"> <CurrentRoundAdmin Rounds="@Tournament.Rounds" GameTypes="@gameTypes"></CurrentRoundAdmin> </MudItem>
+    <MudItem xs="6">
+        <MudPaper>
+            @if(teams == null)
+            {
+                <p>Loading</p>
+            }
+            else
+            {
+                @code{
+                    int j = 0;
+                }
+                <MudList>
+                    @foreach(var team in teams.OrderByDescending(x => x?.Score).Select(x => new RankedTeam(++j, x?.Name, x?.Score ?? 0)))
+                    {
+                        <MudListItem>@team.rank @team.name @team.score</MudListItem>
+                    }
+                </MudList>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter]
+    public int Id{ get; set; }
+
+    Models.Tournament Tournament;
+    List<Team> teams;
+    List<GameType> gameTypes;
+
+    HubConnection hubConnection;
+
+    public record RankedTeam(int rank, string name, double score);
+
+    protected override async Task OnInitializedAsync()
+    {
+        gameTypes = repo.GetGameTypes().ToList();
+        Tournament = tournamentService.GetTournamentById(Id);
+        teams = await tournamentService.GetTeams(Id);
+    }
+}

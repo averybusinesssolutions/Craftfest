@@ -1,0 +1,51 @@
+﻿@using Craftfest.Models
+
+@if (GameType != null)
+{
+    <MudCard>
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h6">@GameType.Name</MudText>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                @if (showRules)
+                {
+                    <MudButton Color="Color.Primary" OnClick="HideRules" >Hide Rules</MudButton>
+                }else{
+                <MudButton Color="Color.Primary" OnClick="ShowRules" >Show Rules</MudButton>
+                }
+            </CardHeaderActions>
+        </MudCardHeader>
+        <MudCardContent>
+            @if (showRules)
+            {
+                <MudText Typo="Typo.body2">
+                    @((MarkupString)GameType?.Rules)
+                </MudText>
+            }
+            else
+            {
+                <MudCardMedia Image="@GameType.ImagePath" />
+            }
+        </MudCardContent>
+    </MudCard>
+}
+
+@code {
+    [Parameter]
+    public GameType? GameType{ get; set; }
+
+    private bool showRules;
+
+    private void ShowRules(MouseEventArgs e)
+    {
+        showRules = true;
+        StateHasChanged();
+    }
+
+    private void HideRules(MouseEventArgs e)
+    {
+        showRules = false;
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,104 @@
+﻿@using Craftfest.Models
+@using Craftfest.Services
+@inject TournamentService tournamentService
+@inject IBracketRepo bracketRepo
+
+<MudDialog @bind-IsVisible="@dwVisibile">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            Declare Winner
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <DeclareWinner Id="@gameId" @bind-Winner="winner"></DeclareWinner>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" >Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudCard>
+    <MudCardHeader>
+        <MudText Typo="Typo.h5">Current Round</MudText>
+    </MudCardHeader>
+    <MudCardContent>
+        <MudTable Dense="true"  Items="@Model.CurrentRound">
+                <HeaderContent>
+                    <MudTh>Game Type</MudTh>
+                    <MudTh>Team A</MudTh>
+                    <MudTh>Team B</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+
+                <RowTemplate>
+                    <MudTd>@context.Type.Name</MudTd>
+                    @if (@context.Teams.Count > 0)
+                    {
+                        <MudTd>@context.Teams[0].Name</MudTd>
+                        <MudTd>@context.Teams[1].Name</MudTd>
+                    }
+                    <MudButton OnClick="(e => DeclareWinner(e, context.Id))">Declare Winner</MudButton>
+                </RowTemplate>
+            </MudTable> 
+    </MudCardContent>
+</MudCard>
+
+
+@code {
+    [Parameter]
+    public RoundViewModel? Model{ get; set; }
+
+    private bool dwVisibile;
+    private int gameId;
+    private Team winner;
+
+    private void DeclareWinner(MouseEventArgs e, int id)
+    {
+        gameId = id;
+        dwVisibile = true;
+    }
+
+    private void Cancel()
+    { 
+        dwVisibile = false;
+        winner = null;
+    }
+
+    private async Task Save(MouseEventArgs e)
+    {
+        var game = Model.CurrentRound.FirstOrDefault(x => x.Id == gameId);
+
+        if(Model.CurrentRound.Count > 0)
+        {
+            Model.CurrentRound.Remove(game);
+            var nextGame = GetNextGame(game);
+            if (nextGame != null) 
+            {
+                Model.CurrentRound.Add(nextGame);
+            }
+        }else
+        {
+            Model.CurrentRound = Model.Rounds[0].Games;
+            Model.Rounds.RemoveAt(0);
+        }
+
+        dwVisibile = false;
+        tournamentService.DeclareWinner(winner.Id, gameId);
+        winner = null;
+        StateHasChanged();
+    }
+
+    private Game? GetNextGame(Game prevGame)
+    {
+        var teams = Model.CurrentRound.SelectMany(x => x.Teams);
+        return null;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Model.CurrentRound = Model.Rounds[0].Games;
+
+        Model.Rounds.RemoveAt(0);
+    }
+}

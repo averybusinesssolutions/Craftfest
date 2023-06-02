@@ -1,0 +1,105 @@
+﻿@using Craftfest.Models
+@using Microsoft.AspNetCore.SignalR.Client
+@inject NavigationManager NavigationManager
+
+
+<MudPaper>
+    <MudTable Items="@Round">
+        <HeaderContent>
+            <MudTh>Type</MudTh>
+            <MudTh>Team A</MudTh>
+            <MudTh>Team B</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Type.Name</MudTd>
+            <MudTd>@context.Teams[0].Name</MudTd>
+            <MudTd>@context.Teams[1].Name</MudTd>
+        </RowTemplate>
+    </MudTable>
+</MudPaper>
+
+
+@code {
+    [Parameter]
+    public List<Round>? Rounds { get; set; } = new List<Round>();
+
+    [Parameter]
+    public List<GameType>? GameTypes { get; set; } = new List<GameType>();
+
+    [Parameter]
+    public EventCallback<List<Round>> RoundsChanged { get; set; }
+
+    private List<Game> Round = new List<Game>();
+
+    private HubConnection? hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/tournamenthub"))
+            .Build();
+
+        hubConnection.On<int, int>("WinnerUpdated", (teamId, gameId) =>
+        {
+            var currentGame = Round.FirstOrDefault(x => x.Id == gameId);
+            var winner = currentGame.Teams.FirstOrDefault(x => x.Id == teamId);
+            Round.Remove(currentGame);
+            Game? game = null;
+            foreach(var r in Rounds)
+            {
+                game = r.Games.FirstOrDefault(x => x.Id == gameId);
+                if(game != null)
+                {
+                    break;
+                }
+            }
+            game.Winner = winner;
+            game.WinnerId = winner.Id;
+            winner = null;
+            LoadData();
+            //NavigationManager.NavigateTo($"tournament/start/{}");
+            StateHasChanged();
+        });
+
+        LoadData();
+        await hubConnection.StartAsync();
+        
+    }
+
+    private void LoadData()
+    {
+        //List<Team> playing = Round?.SelectMany(x => x.Teams).ToList() ?? new List<Team>();
+        if (Rounds != null)
+        {
+            foreach(var gt in GameTypes)
+            {
+
+                var games = Rounds.OrderBy(x => x.Id).SelectMany(x => x.Games);
+                foreach (var g in games.Where(x => x.Type.Id == gt.Id && x.WinnerId == 0))
+                {
+                    if (!Round.Contains(g))
+                    {
+                        if (!CurrentRoundGameTypeFull(gt))
+                        {
+                            Round.Add(g);
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private bool CurrentRoundGameTypeFull(GameType gameType)
+    {
+        var games = Round.Where(x => x.Type.Id == gameType.Id);
+        if(games.Count() > gameType.AvailableGames)
+        {
+            throw new InvalidOperationException($"Can't play {games.Count()} only {gameType.AvailableGames} are available at a time");
+        }
+        return games.Count() == gameType.AvailableGames;
+    }
+}

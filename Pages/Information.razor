@@ -1,0 +1,147 @@
+﻿@page "/information"
+@using Craftfest.Models
+@using Craftfest.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@inject TournamentService service
+@inject NavigationManager NavigationManager
+@inject IBracketRepo repo
+
+<h3>Information</h3>
+
+<MudText Style="padding-top:50px" Typo="Typo.body1">
+    CraftFest should be considered the “Woodstock” of the 21 century, minus all the mud & stank! But seriously, this is a happy place 😊. Nothing but good vibes and memories. If you don’t know someone, introduce yourself! Make a new friend. Bond. Learn something. And then CRUSH THEM in the 🍺 Beer Olympics 😈
+</MudText>
+
+<MudText Typo="Typo.body1" Style="padding-block:50px">
+    Each team will play each game 2 times.
+Each win = 2 points.
+
+Top 3 winners of the Costume Contest will be awarded points as follows: 1st Place (3 Points) / 2nd Place (2 Points) / 3rd Place (1 Point)
+</MudText>
+
+<MudGrid>
+    <MudItem xs="12" lg="6">
+        <MudPaper>
+            <MudTable Items="@Round">
+                <HeaderContent>
+                    <MudTh>Type</MudTh>
+                    <MudTh>Team A</MudTh>
+                    <MudTh>Team B</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Type.Name</MudTd>
+                    <MudTd>@context.Teams[0].Name</MudTd>
+                    <MudTd>@context.Teams[1].Name</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" lg="6">
+        <MudPaper>
+            @if(teams == null)
+            {
+                <p>Loading</p>
+            }
+            else
+            {
+                @code{
+                    int j = 0;
+                }
+                <MudList>
+                    @foreach(var team in teams.OrderByDescending(x => x.Score).Select(x => new RankedTeam(++j, x.Name, x.Score)))
+                    {
+                        <MudListItem>@team.rank @team.name @team.score</MudListItem>
+                    }
+                </MudList>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    List<Models.Tournament> tournaments;
+    List<Round> Rounds;
+    List<Team> teams;
+    List<GameType> gameTypes;
+    List<Game> Round = new List<Game>();
+
+    HubConnection hubConnection;
+
+    public record RankedTeam(int rank, string name, double score);
+
+    protected override async Task OnInitializedAsync()
+    {
+        gameTypes = repo.GetGameTypes().ToList();
+        tournaments = service.GetTournaments();
+        var currentTournament = tournaments.FirstOrDefault(x => x.TournamentDate >= DateTime.Now.Date) ?? new Models.Tournament();
+        Rounds = currentTournament.Rounds;
+        teams = await service.GetTeams(currentTournament.Id);
+        LoadData(); 
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/tournamenthub"))
+            .Build();
+
+        hubConnection.On<int, int>("WinnerUpdated", (teamId, gameId) =>
+        {
+            var currentGame = Round.FirstOrDefault(x => x.Id == gameId);
+            var winner = currentGame.Teams.FirstOrDefault(x => x.Id == teamId);
+            Round.Remove(currentGame);
+            Game? game = null;
+            foreach(var r in Rounds)
+            {
+                game = r.Games.FirstOrDefault(x => x.Id == gameId);
+                if(game != null)
+                {
+                    break;
+                }
+            }
+            game.Winner = winner;
+            game.WinnerId = winner.Id;
+            winner = null;
+            var t = teams.FirstOrDefault(x => x.Id == teamId);
+            t.Score += 2;
+            LoadData();
+            StateHasChanged();
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private void LoadData()
+    {
+        //List<Team> playing = Round?.SelectMany(x => x.Teams).ToList() ?? new List<Team>();
+        if (Rounds != null)
+        {
+            foreach(var gt in gameTypes)
+            {
+
+                var games = Rounds.OrderBy(x => x.Id).SelectMany(x => x.Games);
+                foreach (var g in games.Where(x => x.Type.Id == gt.Id && x.WinnerId == 0))
+                {
+                    if (!Round.Contains(g))
+                    {
+                        if (!CurrentRoundGameTypeFull(gt))
+                        {
+                            Round.Add(g);
+                        }
+                        else
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private bool CurrentRoundGameTypeFull(GameType gameType)
+    {
+        var games = Round.Where(x => x.Type.Id == gameType.Id);
+        if(games.Count() > gameType.AvailableGames)
+        {
+            throw new InvalidOperationException($"Can't play {games.Count()} only {gameType.AvailableGames} are available at a time");
+        }
+        return games.Count() == gameType.AvailableGames;
+    }
+}

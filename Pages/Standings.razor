@@ -1,0 +1,23 @@
+﻿@using Craftfest.Models
+
+<MudPaper>
+    @if(Teams == null)
+    {
+        <p>Loading</p>
+    }
+    else
+    {
+        <MudList>
+            @code{int j = 0;}
+            @foreach(var team in Teams.OrderByDescending(x => x.Score))
+            {
+                <MudListItem>@(++j) @team.Name @team.Score</MudListItem>
+            }
+        </MudList>
+    }
+</MudPaper>
+
+@code {
+    [Parameter]
+    public List<Team>? Teams{ get; set; }
+}

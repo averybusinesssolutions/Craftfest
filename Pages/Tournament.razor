@@ -1,0 +1,693 @@
+﻿@page "/tournament"
+@using Craftfest.Data
+@using Craftfest.Interfaces
+@using Craftfest.Models;
+@using Craftfest.Services
+@using Microsoft.EntityFrameworkCore
+@inject TournamentService tournamentService
+@inject IDialogService DialogService
+@inject NavigationManager Navigation
+@inject IBracketRepo repo
+@inject ITournamentRepo tournamentRepo
+
+<h3>Tournaments</h3>
+
+<MudDialog @bind-IsVisible="@dwVisibile">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            Declare Winner
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <DeclareWinner Id="@gameId" @bind-Winner="winner"></DeclareWinner>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" >Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Save">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-IsVisible="@visibile">
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            New Tournament
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField Label="Name" T="string" @bind-Value="@newTournament.Name"></MudTextField>
+        <MudTextField Label="Date" T="DateTime" @bind-Value="@newTournament.TournamentDate"></MudTextField>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Create</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudButton OnClick="NewTournamentClick">New Tournament</MudButton>
+<MudTable Items="@tournaments">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Date</MudTh>
+        <MudTh>Number of Rounds</MudTh>
+        <MudTh>Winner</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Date">@context.TournamentDate.ToLocalTime().ToShortDateString()</MudTd>
+        <MudTd DataLabel="Number of Rounds">@context.Rounds.Count</MudTd>
+        <MudTd DataLabel="Winner">@context?.Winner?.Name</MudTd>
+        <MudButtonGroup>
+            <MudIconButton Icon="@Icons.Filled.CalendarViewDay" OnClick="@(e => ShowTournament(e, context.Id))"></MudIconButton>
+            <MudIconButton Icon="@Icons.Filled.Edit"></MudIconButton>
+            @if(showTournament == newTournament && showTournament != null && showTournament.Id == @context.Id)
+            {
+                <MudIconButton Icon="@Icons.Filled.Save" OnClick="@(e => SaveTournament(e, context.Id))"></MudIconButton>
+            }
+            else
+            {
+                <MudIconButton Icon="@Icons.Filled.PlayArrow" OnClick="@(e => StartTournament(e, context.Id))"></MudIconButton>
+            }
+            <MudIconButton Icon="@Icons.Filled.Delete" OnClick="@(e => DeleteTournament(e, context.Id))"></MudIconButton>
+        </MudButtonGroup>
+    </RowTemplate>
+</MudTable>
+@if(showTournament == newTournament && showTournament != null)
+{
+    <MudIconButton Icon="@Icons.Filled.Refresh" OnClick="@(e => RefreshTournament(e))"></MudIconButton>
+}
+<MudPaper>
+@if (showTournament != null) {
+    <MudGrid>
+        @{
+            int i = 0;
+        }
+        @foreach (var round in showTournament.Rounds)
+        {
+            <MudItem xs="12" lg="4">
+                <MudPaper>
+                    <MudText Typo="Typo.h4">Round @(++i)</MudText>
+                    <MudTable Dense="true"  Items="@round.Games">
+                        <HeaderContent>
+                            <MudTh>Game Type</MudTh>
+                            <MudTh>Team A</MudTh>
+                            <MudTh>Team B</MudTh>
+                            <MudTh></MudTh>
+                        </HeaderContent>
+
+                        <RowTemplate>
+                            <MudTd DataLabel="Game">@context.Type.Name</MudTd>
+                            @if (context.Teams.Count > 0)
+                            {
+                                <MudTd DataLabel="Team A">
+                                    @context.Teams[0]?.Name
+                                </MudTd>
+                                <MudTd DataLabel="Team B">
+                                    @context.Teams[1]?.Name
+                                </MudTd>
+                            }
+                            <MudButton OnClick="(e => DeclareWinner(e, context.Id))">Declare Winner</MudButton>
+                        </RowTemplate>
+                    </MudTable>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+</MudPaper>
+@code {
+    private List<Game> Games = new List<Game>();
+
+    private List<Models.Tournament> tournaments = new List<Models.Tournament>();
+    private bool visibile;
+    private bool dwVisibile;
+    int gameId;
+    private Team winner;
+    private bool success;
+
+    private Models.Tournament newTournament = new Models.Tournament() { TournamentDate = DateTime.Now };
+
+    private Models.Tournament showTournament;
+
+    private void NewTournamentClick() => visibile = true;
+    private async void Submit()
+    {
+        visibile = false;
+        newTournament.Bracket = new Bracket(repo);
+        newTournament.Bracket.Initialize();
+        while(newTournament.Bracket.Games.Count > 0)
+        {
+            newTournament.Rounds.Add(new Round { Games = NextRound() });
+        }
+        //await tournamentService.AddAsync(newTournament);
+        tournaments.Add(newTournament);
+        showTournament = newTournament;
+        StateHasChanged();
+    }
+
+    private void ShowTournament(MouseEventArgs e, int id)
+    {
+        if (showTournament == null)
+        {
+            showTournament = tournaments.FirstOrDefault(x => x.Id == id);
+        }
+        else
+        {
+            showTournament = null;
+        }
+        StateHasChanged();
+    }
+
+    private void Cancel()
+    { 
+        visibile = false;
+        dwVisibile = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var gt = new List<GameType>() 
+            {
+                new GameType { 
+                    Id = 1, 
+                    Name = "Corn Hole", 
+                    ImagePath = "images/Corn Hole.jpg", 
+                    Description = "Toss bean bags onto specialized boards.", 
+                    NumberOfTeams = 2, AvailableGames = 2, 
+                    Rules = "<ul><li>Players on the same side will alternate throws</li><li>Individual points cancel each other out. Round score is determined by subtracting one score from the other</li><li>First team to 21 wins</li><li>To win, you must get exactly 21 to win. Overtime is a game to 11.</li><li>3 points = sand bag in the hole</li><li>1 point = sand bag on the board</li><li>A sandbag CANNOT hit the ground and bounce on the board. This is a zero point scenario</li><li>If you go over 21, the amount of points you go over will be subtracted from your score.</li></ul>"},
+                new GameType { 
+                    Id = 2, 
+                    Name = "Kan Jam", 
+                    ImagePath = "images/kanjam.jpg", 
+                    Description = "Throw frisbees into trashcans.", 
+                    NumberOfTeams = 2, AvailableGames = 2, 
+                    Rules = "<ul><li>Play to 21 points</li><li>If a team goes over 21 points, those extra points are subtracted from the team’s current score</li><li>When a team scores 3 points on both throws, each team member throws again.</li><li>3 points = slapped in on top</li><li>2 points = direct KamJam hit without teammate interference</li><li>1 point = disc is directed into the outside of the KamJam by teammate</li><li>Slot = Automatic win</li><li>Overtime is a game to 11</li></ul>"
+                },
+                new GameType { 
+                    Id = 3, 
+                    Name = "Beer Pong", 
+                    ImagePath = "images/beerpong.jpg", 
+                    Description = "Toss ping pong balls into solo cups.", 
+                    NumberOfTeams = 2, AvailableGames = 1,
+                    Rules = "<ul><li>The rules are simplistic to mimic basic beer pong</li><li>Both eye for an eye OR rock, paper, scissors can be used to determine who goes first</li><li>If both players make a cup on their turn, the balls are returned to shoot again</li><li>There is no heating up, on fire, “blowing” / “finger” the ball from the cup or lightning</li><li>Teams get 1 (re-rack) request per game and can only be used at the start of a teams turn.</li><li>There is no end game gentlemens</li><li>If a team sinks all cups, the opposing players have redemption (chance to shoot again). If one of these players makes a cup, that player is afforded another shot until they miss.</li><li>Sudden death setup is a 3 cup triangle.</li></ul>"
+                },
+                new GameType { 
+                    Id = 4, 
+                    Name = "Potato Sack Race", 
+                    ImagePath = "images/psr.jpg", 
+                    Description = "Race to the finish with your legs in a potato sack.", 
+                    NumberOfTeams = 2, AvailableGames = 1,
+                    Rules = "<ul><li>A player from both teams starts the race by placing both feet into the sack.</li><li>The first players will hop down to the marked location and head back to the starting point.</li><li>Players MUST Tag the hand of their teammates before getting out of the sack. The tagged in teammates will hop the course and the first team back to the finish line wins.</li><li>IMPORTANT: an officiator must be present at every race to confirm winner and enforce rules.</li></ul>"
+                },
+                new GameType { 
+                    Id = 5, 
+                    Name = "Ladder Golf", 
+                    ImagePath = "images/laddergolf.jpg", 
+                    Description = "Throw bolas around poles on specialized ladder structure.", 
+                    NumberOfTeams = 2, AvailableGames = 1,
+                    Rules = "<ul><li>establish throw line at 5 paces from the ladder</li><li>Game is to 21 exactly. If a player goes over 21, all points are discarded from that round.</li><li>Bolla on the bottom ladder = 1 point</li><li>Bolla on the middle ladder = 2 points</li><li>Bolla on the top ladder = 3 points</li><li>If a Bolla from both teams end up on the same ladder, those points cancel out. IMPORTANT: points ONLY cancel out on the same ladder. If team A’s Bolla hits the top ladder and Team B’s hits the middle ladder those points DO NOT cancel out</li><li>Bolas can be knocked off the ladder. Bola’s knocked off the ladder do not count towards end of round scoring.</li><li>One (1) bonus point is awarded if a player lands all 3 Bolla’s on any ladder during their turn.</li></ul>"
+                }
+            };
+
+        var teams = new List<Team>()
+            {
+                new Team { Id = 1, Name = "Texas"},
+                new Team { Id = 2, Name = "Florida"},
+                new Team { Id = 3, Name = "Tennesse"},
+                new Team { Id = 4, Name = "Maryland"},
+                new Team { Id = 5, Name = "Arizona"},
+                new Team { Id = 6, Name = "Hawaii"},
+                new Team { Id = 7, Name = "Indiana"},
+                //new Team { Id = 8, Name = "Alaska"},
+                new Team { Id = 9, Name = "California"},
+                new Team { Id = 10, Name = "New Hampshire"},
+                new Team { Id = 11, Name = "New Jersey"},
+                new Team { Id= 12, Name = "Kentucky"},
+                new Team { Id = 13, Name = "Louisiana"},
+                new Team { Id = 14, Name = "North Carolina"}
+            };
+
+        var games = new List<Game>()
+            {
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Texas").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Kentucky").FirstOrDefault(), teams.Where(x => x.Name == "New Jersey").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "North Carolina").FirstOrDefault(), teams.Where(x => x.Name == "Arizona").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Texas").FirstOrDefault(), teams.Where(x => x.Name == "California").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Hawaii").FirstOrDefault(), teams.Where(x => x.Name == "Louisiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Jersey").FirstOrDefault(), teams.Where(x => x.Name == "Hawaii").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "Louisiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "North Carolina").FirstOrDefault(), teams.Where(x => x.Name == "Kentucky").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Florida").FirstOrDefault(), teams.Where(x => x.Name == "New Hampshire").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "California").FirstOrDefault(), teams.Where(x => x.Name == "Florida").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Hampshire").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Kan Jam").FirstOrDefault(),
+                },
+                /////////////////////////////////////////////////////////////////////////////
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Kentucky").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Louisiana").FirstOrDefault(), teams.Where(x => x.Name == "Arizona").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Hawaii").FirstOrDefault(), teams.Where(x => x.Name == "New Jersey").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "California").FirstOrDefault(), teams.Where(x => x.Name == "New Hampshire").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "Texas").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Florida").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Kentucky").FirstOrDefault(), teams.Where(x => x.Name == "North Carolina").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Hampshire").FirstOrDefault(), teams.Where(x => x.Name == "Tennesse").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "North Carolina").FirstOrDefault(), teams.Where(x => x.Name == "Florida").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Louisiana").FirstOrDefault(), teams.Where(x => x.Name == "Texas").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Jersey").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "California").FirstOrDefault(), teams.Where(x => x.Name == "Hawaii").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Corn Hole").FirstOrDefault(),
+                },
+                /////////////////////////////////////////////////////////////////////////////
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "North Carolina").FirstOrDefault(), teams.Where(x => x.Name == "Hawaii").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Florida").FirstOrDefault(), teams.Where(x => x.Name == "Kentucky").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "California").FirstOrDefault(), teams.Where(x => x.Name == "New Hampshire").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Maryland").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "Tennesse").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "New Jersey").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Texas").FirstOrDefault(), teams.Where(x => x.Name == "California").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Florida").FirstOrDefault(), teams.Where(x => x.Name == "New Hampshire").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Louisiana").FirstOrDefault(), teams.Where(x => x.Name == "Kentucky").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "North Carolina").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "Hawaii").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Jersey").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Texas").FirstOrDefault(), teams.Where(x => x.Name == "Louisiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Potato Sack Race").FirstOrDefault(),
+                },
+                ///////////////////////////////////////////////////////////////////////////
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Jersey").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Hawaii").FirstOrDefault(), teams.Where(x => x.Name == "North Carolina").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Indiana").FirstOrDefault(), teams.Where(x => x.Name == "Hawaii").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "North Carolina").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Florida").FirstOrDefault(), teams.Where(x => x.Name == "New Jersey").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Louisiana").FirstOrDefault(), teams.Where(x => x.Name == "California").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Texas").FirstOrDefault(), teams.Where(x => x.Name == "Kentucky").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Hampshire").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "Texas").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "Louisiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Hampshire").FirstOrDefault(), teams.Where(x => x.Name == "California").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Kentucky").FirstOrDefault(), teams.Where(x => x.Name == "Florida").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Ladder Golf").FirstOrDefault(),
+                },
+                /////////////////////////////////////////////////////////////////////////////
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "Texas").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Indiana").FirstOrDefault(), teams.Where(x => x.Name == "Louisiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Hawaii").FirstOrDefault(), teams.Where(x => x.Name == "Florida").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Arizona").FirstOrDefault(), teams.Where(x => x.Name == "California").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Jersey").FirstOrDefault(), teams.Where(x => x.Name == "New Hampshire").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Tennesse").FirstOrDefault(), teams.Where(x => x.Name == "California").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Texas").FirstOrDefault(), teams.Where(x => x.Name == "North Carolina").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "North Carolina").FirstOrDefault(), teams.Where(x => x.Name == "Kentucky").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Kentucky").FirstOrDefault(), teams.Where(x => x.Name == "Maryland").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Florida").FirstOrDefault(), teams.Where(x => x.Name == "New Jersey").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "Hawaii").FirstOrDefault(), teams.Where(x => x.Name == "Indiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                },
+                new Game
+                { Teams = new List<Team>{
+                    teams.Where(x => x.Name == "New Hampshire").FirstOrDefault(), teams.Where(x => x.Name == "Louisiana").FirstOrDefault() },
+                    Type = gt.Where(x => x.Name == "Beer Pong").FirstOrDefault(),
+                }
+            };
+
+        tournaments = new List<Models.Tournament>()
+        {
+            new Models.Tournament()
+            {
+                Id = 1,
+                TournamentDate = DateTime.Now.AddDays(1).ToUniversalTime(),
+                Name = "Craftfest 2022",
+                Bracket = new Bracket()
+                {
+                    Games = games,
+                    GameTypeReplays = 2,
+                    GameTypes = gt
+                },
+                Rounds = GetRounds(games, gt)
+            }
+        };
+        tournamentService.AddAsync(tournament: tournaments[0]);
+    }
+
+    private List<Round> GetRounds(List<Game> games, List<GameType> gameTypes)
+        {
+            List<Round> rounds = new List<Round>();
+            while (games.Count > 0)
+            {
+                Round round = new Round();
+                round.Games = NextRound(gameTypes, games);
+                rounds.Add(round);
+
+                foreach(var g in round.Games)
+                {
+                    games.Remove(g);
+                }
+            }
+            return rounds;
+        }
+
+        private List<Game> NextRound(List<GameType> gameTypes, List<Game> games)
+        {
+            List<Game> output = new List<Game>();
+            List<Team> currentlyPlaying = new List<Team>();
+            foreach (var gt in gameTypes)
+            {
+                int availableGames = gt.AvailableGames;
+
+                for (int i = 0; i < availableGames; i++)
+                {
+                    var game = games
+                        .Where(x => x.Type.Name == gt.Name && !currentlyPlaying.Any(cp => cp?.Name == x.Teams[0]?.Name) && !currentlyPlaying.Any(cp => cp?.Name == x.Teams[1]?.Name))
+                        .FirstOrDefault();
+                    if (game != null)
+                    {
+                        currentlyPlaying.AddRange(game.Teams);
+                        output.Add(game);
+                        games.Remove(game);
+                    }
+                }
+            }
+
+            return output;
+        }
+
+    private List<Game> NextRound()
+    {
+        List<Game> output = new List<Game>();
+        List<Team> currentlyPlaying = new List<Team>();
+        foreach (var gt in newTournament.Bracket.GameTypes)
+        {
+            int availableGames = gt.AvailableGames;
+
+            for (int i = 0; i < availableGames; i++)
+            {
+                var game = newTournament.Bracket.Games
+                    .Where(x => x.Type.Name == gt.Name && !currentlyPlaying.Any(cp => cp.Name == x.Teams[0].Name) && !currentlyPlaying.Any(cp => cp.Name == x.Teams[1].Name))
+                    .FirstOrDefault();
+                if (game != null)
+                {
+                    currentlyPlaying.AddRange(game.Teams);
+                    output.Add(game);
+                    newTournament.Bracket.Games.Remove(game);
+                }
+            }
+        }
+
+        return output;
+    }
+
+    private void DeclareWinner(MouseEventArgs e, int id)
+    {
+        gameId = id;
+        dwVisibile = true;
+    }
+
+    private async Task Save(MouseEventArgs e)
+    {
+        tournamentService.DeclareWinner(winner.Id, gameId);
+        dwVisibile = false;
+        StateHasChanged();
+    }
+
+    private async Task StartTournament(MouseEventArgs e, int id)
+    {
+        Navigation.NavigateTo($"tournament/start/{id}");
+    }
+
+    private async Task SaveTournament(MouseEventArgs e, int id)
+    {
+        //await tournamentService.AddAsync(newTournament);
+        showTournament = null;
+        newTournament = null;
+    }
+
+    private async Task RefreshTournament(MouseEventArgs e)
+    {
+        newTournament.Bracket.Initialize();
+        newTournament.Rounds = new List<Round>();
+        while(newTournament.Bracket.Games.Count > 0)
+        {
+            newTournament.Rounds.Add(new Round { Games = NextRound() });
+        }
+    }
+
+    private async Task DeleteTournament(MouseEventArgs e, int id)
+    {
+        await tournamentRepo.DeleteTournament(id);
+        await tournamentRepo.SaveChanges();
+        var t = tournaments.FirstOrDefault(x => x.Id == id);
+        if(t != null)  
+            tournaments.Remove(t);
+        StateHasChanged();
+    }
+}

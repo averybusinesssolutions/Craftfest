@@ -1,0 +1,28 @@
+﻿@using BlazorAnimate;
+@page "/"
+
+<MudText Typo="Typo.h5">
+    Welcome to CraftFest 2022! 
+    <Animate Animation="Animations.ZoomIn" Duration="TimeSpan.FromSeconds(3)">
+        <MudText Typo="Typo.h2">
+            🍺 
+        </MudText>
+    </Animate>
+</MudText>
+<MudText Typo="Typo.body1" Style="padding-top:100px">
+If you’re a newcomer, welcome! 👋 You’re certainly in for an unforgettable weekend. 🌌 ⛺️ If you’re a returning participant, welcome back! This is the 3️⃣rd annual CraftFest. This years fest has definitely become the most anticipated! Since it’s 2022, we have adapted to the times of modern technology 💻    
+</MudText>
+<MudGrid Style="padding-top:100px">
+    <MudItem xs="12" lg="4">
+        <MudButton Href="information">Information</MudButton>
+    </MudItem>
+    <MudItem xs="12" lg="4">
+        <MudButton Href="rules">Rules</MudButton>
+    </MudItem>
+    <MudItem xs="12" lg="4">
+        <MudButton Href="schedule">Schedule</MudButton>
+    </MudItem>
+</MudGrid>
+
+@code{
+}

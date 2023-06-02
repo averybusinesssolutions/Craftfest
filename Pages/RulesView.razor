@@ -1,0 +1,22 @@
+﻿@page "/rules"
+@using Craftfest.Models
+@inject IBracketRepo repo
+
+<h3>Game Rules</h3>
+
+<MudGrid>
+    @foreach(var gt in GameTypes)
+    {
+        <MudItem xs="12" lg="6">
+            <Rules GameType="@gt"></Rules>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    List<GameType> GameTypes = new List<GameType>();
+    protected override async Task OnInitializedAsync()
+    {
+        GameTypes = repo.GetGameTypes().ToList();
+    }
+}
